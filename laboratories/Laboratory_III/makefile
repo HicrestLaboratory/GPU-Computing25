@@ -1,7 +1,7 @@
 CC=gcc
 
-LIBS=-L/opt/shares/openfoam/software/OpenBLAS/0.3.23-GCC-12.3.0/lib 
-INCLUDES=-I/opt/shares/openfoam/software/OpenBLAS/0.3.23-GCC-12.3.0/include -Iinclude
+LIBS=-L/opt/shares/easybuild/software/OpenBLAS/0.3.23-GCC-12.3.0/lib 
+INCLUDES=-I/opt/shares/easybuild/software/OpenBLAS/0.3.23-GCC-12.3.0/include -Iinclude
 LIB_FLAGS=-lm -lopenblas
 
 BIN_FOLDER := bin

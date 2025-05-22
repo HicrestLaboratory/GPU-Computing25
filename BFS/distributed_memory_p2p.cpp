@@ -19,6 +19,19 @@ typedef struct {
 
     int *row_ptr;
     int *col_idx;
+} GraphCSR;
+
+void free_graph(GraphCSR* g) {
+    free(g->row_ptr);
+    free(g->col_idx);
+}
+
+typedef struct {
+    int nnodes;
+    int nedges;
+
+    int *row_ptr;
+    int *col_idx;
 
     int g_nnodes;
     int g_nedges;
@@ -29,14 +42,17 @@ typedef struct {
     int cut_nnodes;
     int *cut_ids;
     int *cut_owners;
-} GraphCSR;
+} DistGraphCSR;
 
-void free_graph(GraphCSR* g) {
+void free_distgraph(DistGraphCSR* g) {
     free(g->row_ptr);
     free(g->col_idx);
+    free(g->cut_ids);
+    free(g->cut_owners);
+    free(g->myloc_nodes);
 }
 
-int globalId2localId (GraphCSR* g, int gid) {
+int globalId2localId (DistGraphCSR* g, int gid) {
     int lid;
     int* it = std::lower_bound(g->myloc_nodes, g->myloc_nodes + g->l_nnodes, gid);
 
@@ -54,7 +70,7 @@ int globalId2localId (GraphCSR* g, int gid) {
     return(lid);
 }
 
-int localId2globalId (GraphCSR* g, int lid) {
+int localId2globalId (DistGraphCSR* g, int lid) {
     int gid;
     if (lid <= g->l_nnodes) {
         gid = g->myloc_nodes[lid];
@@ -68,7 +84,8 @@ int localId2globalId (GraphCSR* g, int lid) {
     return(gid);
 }
 
-int get_fronteer(GraphCSR* graph, int* dist, int nf, int** fvec) {
+template <typename GT>
+int get_fronteer(GT* graph, int* dist, int nf, int** fvec) {
     int flen = 0;
     for (int j=0; j<graph->nnodes; j++) if (dist[j] == nf) flen++;
     *fvec = (int*)malloc(sizeof(int)*flen);
@@ -82,7 +99,8 @@ int get_fronteer(GraphCSR* graph, int* dist, int nf, int** fvec) {
     return(flen);
 }
 
-void print_fornteers(GraphCSR* graph, int* dist, int cust_max_dist=-1) {
+template <typename GT>
+void print_fornteers(GT* graph, int* dist, int cust_max_dist=-1) {
     int n = graph->nnodes;
     int max_dist = dist[0];
     for (int i=1; i<n; i++) if (dist[i] != INF && dist[i]>max_dist) max_dist = dist[i];
@@ -97,7 +115,6 @@ void print_fornteers(GraphCSR* graph, int* dist, int cust_max_dist=-1) {
         int *fvec, flen = get_fronteer(graph, dist, i, &fvec);
         fprintf(stdout, "Fronteer %d: ", i);
         for (int j=0; j<flen; j++) fprintf(stdout, "%d ", (graph->l_nnodes>0) ? localId2globalId(graph, fvec[j]) : fvec[j]);
-//         for (int j=0; j<flen; j++) fprintf(stdout, "%d ", fvec[j]);
         fprintf(stdout, "\n");
         free(fvec);
     }
@@ -129,7 +146,7 @@ void bfs_csr(GraphCSR* graph, int start, int* dist) {
 }
 
 
-void dist_bfs_csr(GraphCSR* graph, int start, int (*owner_func)(int), int* dist) {
+void dist_bfs_csr(DistGraphCSR* graph, int start, int (*owner_func)(int), int* dist) {
     int n = graph->nnodes;
     int* row_ptr = graph->row_ptr;
     int* col_idx = graph->col_idx;
@@ -271,9 +288,52 @@ GraphCSR* read_graph(void) {
     return(graph);
 }
 
-void print_graph(GraphCSR* graph) {
-    fprintf(stdout, "nnodes: %d, nedges: %d, g_nnodes: %d, g_nedges: %d\n", 
+template<typename GT>
+void print_graph_header(GT* graph);
+
+template<>
+void print_graph_header<GraphCSR>(GraphCSR* graph) {
+    fprintf(stdout, "nnodes: %d, nedges: %d\n", graph->nnodes, graph->nedges);
+    return;
+}
+
+template<>
+void print_graph_header<DistGraphCSR>(DistGraphCSR* graph) {
+    fprintf(stdout, "nnodes: %d, nedges: %d, g_nnodes: %d, g_nedges: %d\n",
 		    graph->nnodes, graph->nedges, graph->g_nnodes, graph->g_nedges);
+    return;
+}
+
+template<typename GT>
+void print_graph_info(GT* graph);
+
+template<>
+void print_graph_info<GraphCSR>(GraphCSR* graph) {
+    return;
+}
+
+template<>
+void print_graph_info<DistGraphCSR>(DistGraphCSR* graph) {
+    fprintf(stdout, "myloc_nodes (%d): ", graph->l_nnodes);
+    for (int i=0; i<graph->l_nnodes; i++) fprintf(stdout, "%d ", graph->myloc_nodes[i]);
+    fprintf(stdout, "\n");
+
+    if (graph->cut_nnodes > 0) {
+        fprintf(stdout, "cut_ids (%d): ", graph->cut_nnodes);
+        for (int i=0; i<graph->cut_nnodes; i++) fprintf(stdout, "%d ", graph->cut_ids[i]);
+        fprintf(stdout, "\n");
+
+        fprintf(stdout, "cut_owners (%d): ", graph->cut_nnodes);
+        for (int i=0; i<graph->cut_nnodes; i++) fprintf(stdout, "%d ", graph->cut_owners[i]);
+        fprintf(stdout, "\n");
+    }
+    return;
+}
+
+template <typename GT>
+void print_graph(GT* graph) {
+    print_graph_header(graph);
+
     for(int i=0; i<graph->nnodes; i++) {
         fprintf(stdout, "Node %d: ", i);
         for (int j=graph->row_ptr[i]; j<graph->row_ptr[i+1]; j++) {
@@ -283,19 +343,7 @@ void print_graph(GraphCSR* graph) {
         fprintf(stdout, "\n");
     }
 
-    fprintf(stdout, "myloc_nodes (%d): ", graph->l_nnodes);
-    for (int i=0; i<graph->l_nnodes; i++) fprintf(stdout, "%d ", graph->myloc_nodes[i]);
-    fprintf(stdout, "\n");
-
-    if (graph->cut_nnodes>0) {
-        fprintf(stdout, "cut_ids (%d): ", graph->cut_nnodes);
-        for (int i=0; i<graph->cut_nnodes; i++) fprintf(stdout, "%d ", graph->cut_ids[i]);
-        fprintf(stdout, "\n");
-
-        fprintf(stdout, "cut_owners (%d): ", graph->cut_nnodes);
-        for (int i=0; i<graph->cut_nnodes; i++) fprintf(stdout, "%d ", graph->cut_owners[i]);
-        fprintf(stdout, "\n");
-    }
+    print_graph_info(graph);
 }
 
 GraphCSR* defaultgraph_1 (void) {
@@ -311,11 +359,6 @@ GraphCSR* defaultgraph_1 (void) {
     for(int i=0; i<10; i++) graph->row_ptr[i] = tmp_row[i];
     for(int i=0; i<22; i++) graph->col_idx[i] = tmp_col[i];
 
-    graph->g_nnodes = graph->nnodes;
-    graph->g_nedges = graph->nedges;
-    graph->myloc_nodes = NULL;
-    graph->l_nnodes = 0;
-    graph->cut_nnodes = 0;
     return(graph);
 }
 
@@ -380,15 +423,10 @@ GraphCSR* defaultgraph_2(void) {
     g->nedges = nedges_undirected;
     g->row_ptr = row_ptr;
     g->col_idx = col_idx;
-    g->g_nnodes = nnodes;
-    g->g_nedges = nedges_undirected;
-    g->myloc_nodes = NULL;
-    g->l_nnodes = 0;
-    g->cut_nnodes = 0;
     return g;
 }
 
-GraphCSR* assign_partition_with_function(GraphCSR* ig, int (*owner_func)(int)) {
+DistGraphCSR* assign_partition_with_function(GraphCSR* ig, int (*owner_func)(int)) {
     int rank, size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
@@ -405,7 +443,7 @@ GraphCSR* assign_partition_with_function(GraphCSR* ig, int (*owner_func)(int)) {
     }
 
     // Step 2: Allocate and initialize GraphCSR for local partition
-    GraphCSR *part = (GraphCSR *)malloc(sizeof(GraphCSR));
+    DistGraphCSR *part = (DistGraphCSR *)malloc(sizeof(DistGraphCSR));
     part->g_nnodes = ig->nnodes;
     part->g_nedges = ig->nedges;
     part->l_nnodes = local_count;
@@ -489,9 +527,11 @@ int main(int argc, char** argv) {
     //GraphCSR *graph = read_graph();
     if (rank == 0) fprintf(stdout, "Reading global graph...\n");
     GraphCSR *g_graph = defaultgraph_2();
-    if (rank == 0) print_graph(g_graph);
+    if (rank == 0) print_graph<GraphCSR>(g_graph);
+    free_graph(g_graph);;
+    free(g_graph);
 
-    GraphCSR *graph;
+    DistGraphCSR *graph;
     for (int i=0; i<size; i++) {
         if (rank == i) {
             fprintf(stdout, "---------------------------------------\n\t\tProcess %d\n---------------------------------------\n", rank);
@@ -528,7 +568,7 @@ int main(int argc, char** argv) {
     }
     if(rank==0) fprintf(stdout, "---------------------------------------\n");
 
-    free_graph(graph);
+    free_distgraph(graph);
     free(graph);
     free(dist);
 

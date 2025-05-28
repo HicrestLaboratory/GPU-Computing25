@@ -29,6 +29,7 @@ DENSE_OBJECTS = $(TARGETDIR)/matrix_generation.o
 PARSER_OBJECTS = $(OBJECTDIR)/matrix_parser.o $(OBJECTDIR)/mmio.o
 
 all:  dense sparse
+asign: $(TARGETDIR)/example_gpuassignment
 parser: $(TARGETDIR)/example_parser $(PARSER_OBJECTS)
 
 $(OBJ_FOLDER)/my_time_lib.o: $(LABII_SRC_FOLDER)/my_time_lib.c
@@ -53,6 +54,10 @@ $(OBJECTDIR)/matrix_parser.o: $(INCDIR)/matrix_parser.cpp $(INCDIR)/matrix_parse
 $(TARGETDIR)/example_parser: example_parser.cpp $(OBJECTDIR)/matrix_parser.o $(OBJECTDIR)/mmio.o
 	mkdir -p $(@D)
 	$(CC) $^ -o $@
+
+$(TARGETDIR)/example_gpuassignment: example_gpuassignment.cu
+	mkdir -p $(@D)
+	$(NVCC) $< -o $@ -lnvidia-ml -lmpi
 
 clean:
 	rm -rf $(TARGETDIR)/ $(OBJECTDIR)/

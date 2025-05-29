@@ -51,7 +51,38 @@ void get_mtx_dims (FILE *f, int *m, int *n, int *nnz) {
 }
 
 template<typename IdxType, typename ValType>
-struct COO<IdxType, ValType>* my_mtx_to_coo (FILE* inputfile, MM_typecode *matcode, int verbose=0) {
+void filter_coo_with_function(struct COO<IdxType, ValType> *coo, int(*owner_fn)(IdxType, IdxType, int), int myid, int nproc) {
+    int orig_nnz = coo->nnz;
+
+    int destid, currentsize = 0;
+    IdxType *new_rowidx = (IdxType*)malloc(sizeof(IdxType)*orig_nnz);
+    IdxType *new_colidx = (IdxType*)malloc(sizeof(IdxType)*orig_nnz);
+    ValType *new_values = (ValType*)malloc(sizeof(ValType)*orig_nnz);
+    for(int i=0; i<orig_nnz; i++) {
+        destid = owner_fn(coo->rows_idx[i], coo->cols_idx[i], nproc);
+        if (destid == myid) {
+            new_rowidx[currentsize] = coo->rows_idx[i];
+            new_colidx[currentsize] = coo->cols_idx[i];
+            new_values[currentsize] = coo->values[i];
+            currentsize++;
+        }
+    }
+
+    new_rowidx = (IdxType*)realloc(new_rowidx, currentsize*sizeof(IdxType));
+    new_colidx = (IdxType*)realloc(new_colidx, currentsize*sizeof(IdxType));
+    new_values = (ValType*)realloc(new_rowidx, currentsize*sizeof(ValType));
+    free(coo->rows_idx);
+    free(coo->cols_idx);
+    free(coo->values);
+
+    coo->rows_idx = new_rowidx;
+    coo->cols_idx = new_colidx;
+    coo->values = new_values;
+    coo->nnz = currentsize;
+}
+
+template<typename IdxType, typename ValType>
+struct COO<IdxType, ValType>* my_mtx_to_coo (FILE* inputfile, MM_typecode *matcode, int verbose=0, int(*owner_fn)(IdxType, IdxType, int)=nullptr, int myid=0, int nproc=0) {
     if (mtxfile_check (inputfile, matcode) != 0) exit(__LINE__);
 
     int m, n, nnz;
@@ -83,6 +114,8 @@ struct COO<IdxType, ValType>* my_mtx_to_coo (FILE* inputfile, MM_typecode *matco
             fprintf(stdout, "%d %d %20.19g\n", coo->rows_idx[i]+1, coo->cols_idx[i]+1, coo->values[i]);
     }
 
+    if (owner_fn != nullptr) filter_coo_with_function(coo, owner_fn, myid, nproc);
+
     return(coo);
 }
 
@@ -96,6 +129,7 @@ struct DENSE<ValType>* malloc_dense (int n, int m) {
 
     return(M);
 }
+
 
 template<typename ValType>
 void free_dense (struct DENSE<ValType> *M) {
@@ -118,8 +152,8 @@ struct DENSE<ValType>* my_coo_to_dense(struct COO<IdxType, ValType> *coo) {
 }
 
 template<typename IdxType, typename ValType>
-struct DENSE<ValType>* my_mtx_to_dense (FILE* inputfile, MM_typecode *matcode, int verbose=0) {
-    struct COO<IdxType, ValType> *coo = my_mtx_to_coo<IdxType, ValType>(inputfile, matcode, verbose);
+struct DENSE<ValType>* my_mtx_to_dense (FILE* inputfile, MM_typecode *matcode, int verbose=0, int(*owner_fn)(IdxType, IdxType, int)=nullptr, int myid=0, int nproc=0) {
+    struct COO<IdxType, ValType> *coo = my_mtx_to_coo<IdxType, ValType>(inputfile, matcode, verbose, owner_fn, myid, nproc);
     struct DENSE<ValType> *M = my_coo_to_dense(coo);
     free_coo(coo);
     return(M);
@@ -184,8 +218,8 @@ struct CSR<IdxType, ValType>* my_coo_to_csr(struct COO<IdxType, ValType>* coo) {
 }
 
 template<typename IdxType, typename ValType>
-struct CSR<IdxType, ValType>* my_mtx_to_csr (FILE* inputfile, MM_typecode *matcode, int verbose=0) {
-    struct COO<IdxType, ValType> *coo = my_mtx_to_coo<IdxType, ValType>(inputfile, matcode, verbose);
+struct CSR<IdxType, ValType>* my_mtx_to_csr (FILE* inputfile, MM_typecode *matcode, int verbose=0, int(*owner_fn)(IdxType, IdxType, int)=nullptr, int myid=0, int nproc=0) {
+    struct COO<IdxType, ValType> *coo = my_mtx_to_coo<IdxType, ValType>(inputfile, matcode, verbose, owner_fn, myid, nproc);
     struct CSR<IdxType, ValType> *csr = my_coo_to_csr(coo);
     free_coo(coo);
     return(csr);
@@ -193,7 +227,7 @@ struct CSR<IdxType, ValType>* my_mtx_to_csr (FILE* inputfile, MM_typecode *matco
 
 
 // Entry point
-void* my_mtx_parser(int argc, char* argv[], const char* str_outtype, int verbose) {
+void* my_mtx_parser(int argc, char* argv[], const char* str_outtype, int verbose, int(*owner_fn)(IDXTYPE, VALTYPE, int), int myid, int nproc) {
     MM_typecode matcode;
     FILE* f;
 
@@ -208,11 +242,11 @@ void* my_mtx_parser(int argc, char* argv[], const char* str_outtype, int verbose
     }
 
     if (strcmp(str_outtype, "dense") == 0) {
-        return (void*) my_mtx_to_dense<IDXTYPE, VALTYPE>(f, &matcode, verbose);
+        return (void*) my_mtx_to_dense<IDXTYPE, VALTYPE>(f, &matcode, verbose, owner_fn, myid, nproc);
     } else if (strcmp(str_outtype, "coo") == 0) {
-        return (void*) my_mtx_to_coo<IDXTYPE, VALTYPE>(f, &matcode, verbose);
+        return (void*) my_mtx_to_coo<IDXTYPE, VALTYPE>(f, &matcode, verbose, owner_fn, myid, nproc);
     } else if (strcmp(str_outtype, "csr") == 0) {
-        return (void*) my_mtx_to_csr<IDXTYPE, VALTYPE>(f, &matcode, verbose);
+        return (void*) my_mtx_to_csr<IDXTYPE, VALTYPE>(f, &matcode, verbose, owner_fn, myid, nproc);
     } else {
         fprintf(stderr, "Unknown type: %s\n", str_outtype);
         exit(__LINE__);

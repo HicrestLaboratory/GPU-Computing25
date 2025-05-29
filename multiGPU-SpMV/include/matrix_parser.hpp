@@ -34,8 +34,10 @@ struct CSR {
     ValType* values;
 };
 
+typedef int(*OwnerFn)(COO<IDXTYPE, VALTYPE> *M, IDXTYPE row, IDXTYPE col, int nproc);
+
 // Main unified parser
-void* my_mtx_parser(int argc, char* argv[], const char* str_outtype, int verbose=0);
+void* my_mtx_parser(int argc, char* argv[], const char* str_outtype, int verbose=0, OwnerFn owner_fn=nullptr, int myid=0, int nproc=0);
 
 #endif // MATRIX_PARSER_HPP
 

@@ -9,39 +9,24 @@ NVCC_BIN_FLAGS = -lcudart -lcuda
 NVCC_LIBS = 
 TARGETDIR := bin
 OBJECTDIR := obj
+INCDIR := include
 SRCDIR := ./
-INCDIR = include
-
-INCLUDE_HEADERS := $(INCDIR)/matrix_generation.h
-INCLUDE_CPP := $(INCDIR)/matrix_generation.cpp
 
 LABII_FOLDER := ../laboratories/Laboratory_II/ex5
 LABII_OBJ_FOLDER := $(LABII_FOLDER)/obj
 LABII_SRC_FOLDER := $(LABII_FOLDER)/src
 
-MAIN_NAME=matrixTranspose
-SPARSE_MAIN_NAME=SpMatrixTransposition
-
-OBJ_FOLDER := obj
-
-OBJECTS = $(OBJ_FOLDER)/my_time_lib.o
+TIME_OBJECTS = $(OBJECTDIR)/my_time_lib.o
 DENSE_OBJECTS = $(TARGETDIR)/matrix_generation.o
 PARSER_OBJECTS = $(OBJECTDIR)/matrix_parser.o $(OBJECTDIR)/mmio.o
 
-all:  dense sparse
+all: asign parser
 asign: $(TARGETDIR)/example_gpuassignment
 parser: $(TARGETDIR)/example_parser $(PARSER_OBJECTS)
 
-$(OBJ_FOLDER)/my_time_lib.o: $(LABII_SRC_FOLDER)/my_time_lib.c
-	@mkdir -p $(BIN_FOLDER) $(OBJ_FOLDER) $(BATCH_OUT_FOLDER)
+$(OBJECTDIR)/my_time_lib.o: $(LABII_SRC_FOLDER)/my_time_lib.c
+	@mkdir -p $(BIN_FOLDER) $(OBJECTDIR) $(BATCH_OUT_FOLDER)
 	$(CC) -c $(LABII_SRC_FOLDER)/my_time_lib.c -o $@ -lm
-
-$(TARGETDIR)/matrix_generation.o: $(INCLUDE_CPP) $(INCLUDE_HEADERS)
-	mkdir -p $(@D)
-	$(CC) -o $@ -c $< $(LIBS) $(OPT)
-
-$(TARGETDIR)/$(MAIN_NAME): $(SRCDIR)/$(MAIN_NAME).cu $(DENSE_OBJECTS) $(OBJECTS)
-	$(NVCC) $(SRCDIR)/$(MAIN_NAME).cu -o $@ $(DENSE_OBJECTS) $(OBJECTS) $(NVCC_BIN_FLAGS) -lcublas
 
 $(OBJECTDIR)/mmio.o: $(INCDIR)/mmio.c $(INCDIR)/mmio.h
 	mkdir -p $(@D)
